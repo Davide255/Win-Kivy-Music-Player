@@ -16,7 +16,7 @@ from Automator import pakedWidget
 from threading import Thread
 
 import time, os
-from core.audio.Audio import Audio
+from audio.Audio import Audio
 import asyncio, sys
 if sys.version_info >= (3, 8, 0): #If python version is > than 3.8.0 asyncio must set his policy to WindowsSelectorEventLoopPolicy()
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
