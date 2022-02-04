@@ -149,7 +149,7 @@ class GUI():
 
 class Music_Player_GUI(MDApp):
     def build(self):
-        Audio().play_audio("D:\\Music\\videoplayback.mp3", True)
+        Audio().play_audio(os.path.realpath("Ncs - Blank (test).mp3"), True)
         app = Screen(name='main')
         app.add_widget(GUI().build())
         self.sm = ScreenManager()
