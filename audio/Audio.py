@@ -72,13 +72,16 @@ class Audio:
         Audio.mediaplayer = MediaPlayer()
 
     def _menu_voices(self, state:bool):
-        from libs.LibWin import SysTrayIcon
-        if state:
-            Audio_voices = ("Play/Pause Audio", None, lambda *args: Audio().play_pause()),  ("Close Audio", None, lambda *args: Audio().quit()),
-        else:
-            Audio_voices = ("Play/Pause Audio", None, SysTrayIcon.Item_Deactivate),  ("Close Audio", None, SysTrayIcon.Item_Deactivate),
-        for i in Audio_voices:
-            SysTrayIcon().EditMenuItemInfo(i[0], i)      
+        try:
+            from libs.LibWin import SysTrayIcon
+            if state:
+                Audio_voices = ("Play/Pause Audio", None, lambda *args: Audio().play_pause()),  ("Close Audio", None, lambda *args: Audio().quit()),
+            else:
+                Audio_voices = ("Play/Pause Audio", None, SysTrayIcon.Item_Deactivate),  ("Close Audio", None, SysTrayIcon.Item_Deactivate),
+            for i in Audio_voices:
+                SysTrayIcon().EditMenuItemInfo(i[0], i)
+        except ImportError:
+            pass
 
     async def _play_audio(self, filename, keep_alive: bool = True):
         from winrt.windows.media.playback import MediaPlaybackItem, MediaPlaybackState

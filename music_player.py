@@ -12,7 +12,17 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivymd.uix.label import MDLabel
 from kivy.uix.image import Image
-from Automator import pakedWidget
+try:
+    from Automator import pakedWidget
+except ImportError:
+    from kivymd.uix.toolbar import MDToolbar
+    class pakedWidget:
+        def toolbar(self, title, **kwargs):
+            if kwargs.get('left_action_item_bypass') == True:
+                kwargs.pop('left_action_item_bypass')
+            tb = MDToolbar(**kwargs)
+            tb.title = title
+            return tb
 from threading import Thread
 
 import time, os
@@ -139,7 +149,7 @@ class GUI():
 
 class Music_Player_GUI(MDApp):
     def build(self):
-        Audio().play_audio("path\\to\\the\\song", True)
+        Audio().play_audio("D:\\Music\\videoplayback.mp3", True)
         app = Screen(name='main')
         app.add_widget(GUI().build())
         self.sm = ScreenManager()
