@@ -1,3 +1,36 @@
+'''
+Audio player and controller from Automator
+==========================================
+
+github: https://github.com/Davide255/Automator
+
+module from core.audio
+
+See Audio class fro docs
+
+MIT License
+
+Copyright (c) 2022 Davide
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
+
 import time, os
 
 #Audio Requirements
@@ -7,53 +40,126 @@ from os import environ
 class Audio:
 
     '''
+Class for controlling playing audios and queues
+===============================================
+
+Simples:
+       
+    Playing audio file:
+
+        >>> from Audio import Audio
+
+        >>> Audio().play_audio('path\\to\\file.ext')
+
+    Controlling Audio in your system:
+
+        >>> from Audio import Audio
+
+        >>> controller = Audio.Controller()
+        >>> controller.setMasterLevel(60) #volume will be set to 60%
+
+    Advanced:
+
+        Real time control:
+
+        >>> from Audio import Audio
+
+        >>> Audio().play_audio('path\\to\\file.ext', True) #True means that this
+                                                            instruction will be executed
+                                                            in a separate Thread
+        >>> while True:
+
+        >>>    command = input('Audio %s is playing:\nP) Play/Pause\nQ) Quit\n\nWhat did you choose? ')
+
+        >>>    if command in ('p', 'P'):
+        >>>        Audio.play_pause()
+
+        >>>    elif command in ('q', 'Q'):
+        >>>        Audio.quit()
+        >>>        break
+
+        >>>    else: print('Unknown command')
+
+        >>>    print ("\033[A                             \033[A") #clean line
+
+        Play from Youtube audio:
+
+        >>> from Audio import Audio
+        >>> from AudioHelpers import Youtube
+
+        >>> Audio.from_stream(Youtube('url').get_stream())
+
+        >>> while Audio.is_playing():
+        >>>     pass
+
+        Mute/Unmute a sigle process:
+
+        >>> from Audio import Audio
+        >>> from core.process import getallprocs
+
+        >>> controller = Audio.Controller()
+
+        >>> for p in getallprocs(name=False):
     '''
+
+    events = ('media_ended', 'source_changed', 'volume_changed', 'playback_state_changed', 'position_changed')
 
     class Controller:
         class Process:
-            def Process(self, process_name):
+            def __init__(self, process_name) -> None:
                 if process_name != None:
                     self.process_name = process_name
-                    self.volume = self.process_volume()
 
             def mute(self):
                 from libs.PyCAW import AudioUtilities
-                try:
-                    from kivy.logger import Logger
-                except ImportError:
-                    import logging as Logger
+                import logging as Logger
                 sessions = AudioUtilities.GetAllSessions()
                 for session in sessions:
                     interface = session.SimpleAudioVolume
                     if session.Process and self.process_name in session.Process.name():
+                        print(dir(interface))
                         interface.SetMute(1, None)
                         Logger.info('Audio:', self.process_name, 'has been muted.')
 
             def unmute(self):
                 from libs.PyCAW import AudioUtilities
-                try:
-                    from kivy.logger import Logger
-                except ImportError:
-                    import logging as Logger
+                import logging as Logger
                 sessions = AudioUtilities.GetAllSessions()
                 for session in sessions:
                     interface = session.SimpleAudioVolume
                     if session.Process and self.process_name in session.Process.name():
+                        print(dir(interface))
                         interface.SetMute(0, None)
                         Logger.info('Audio:', self.process_name, 'has been unmuted.')
 
-            def process_volume(self):
+            def get_volume(self):
                 from libs.PyCAW import AudioUtilities
-                try:
-                    from kivy.logger import Logger
-                except ImportError:
-                    import logging as Logger
+                import logging as Logger
                 sessions = AudioUtilities.GetAllSessions()
                 for session in sessions:
                     interface = session.SimpleAudioVolume
                     if session.Process and session.Process.name() == self.process_name:
-                        Logger.info('Audio: Volume:', interface.GetMasterVolume())
-                        return interface.GetMasterVolume()
+                        Logger.info('Audio: Volume:' + str(round(interface.GetMasterVolume() ** 100)) + '%')
+                        return round(interface.GetMasterVolume() ** 100)
+
+            def set_volume(self, volume):
+                from libs.PyCAW import AudioUtilities
+                import logging as Logger
+                sessions = AudioUtilities.GetAllSessions()
+                for session in sessions:
+                    interface = session.SimpleAudioVolume
+                    if session.Process and session.Process.name() == self.process_name:
+                        Logger.info('Audio: Volume:' + str(round(interface.GetMasterVolume() ** 100)) + '%')
+                        return not bool(interface.SetMasterVolume(volume/100, None))
+
+        def get_all_sessions(self):
+            from libs.PyCAW import AudioUtilities
+            sessions = AudioUtilities.GetAllSessions()
+            procs = list()
+            for session in sessions:
+                if session.Process:
+                    procs.append(session.Process.name())
+            return procs
 
         def setMasterLevel(self, level):
             if isinstance(level, int):
@@ -69,7 +175,48 @@ class Audio:
 
     async def async_initiallize(self):
         from winrt.windows.media.playback import MediaPlayer
+        if hasattr(Audio, 'mediaplayer'):
+            del Audio.mediaplayer
         Audio.mediaplayer = MediaPlayer()
+        Audio.mediaplayer.add_media_ended(Audio.media_ended)
+        Audio.mediaplayer.add_source_changed(Audio.source_changed)
+        Audio.mediaplayer.add_volume_changed(Audio.volume_changed)
+        Audio.mediaplayer.playback_session.add_playback_state_changed(Audio.playback_state_changed)
+        Audio.mediaplayer.playback_session.add_position_changed(Audio.position_changed)
+
+    def from_stream(stream_obj):
+        import asyncio
+        asyncio.run(Audio().async_initiallize())
+
+        from winrt.windows.foundation import TimeSpan
+
+        Audio._stream = stream_obj
+
+        Audio.mediaplayer.source = stream_obj.stream
+        Audio.duration = TimeSpan()
+        Audio.duration.duration = stream_obj.data.length * 10000000
+        
+        Audio.title = stream_obj.data.title
+
+        Audio.play()
+
+        from threading import Thread
+        Thread(target=Audio.stream_end_handler, daemon=True).start()
+
+    def get_stream(self):
+        if hasattr(Audio, '_stream'):
+            return Audio._stream
+
+    def is_stream(self):
+        return True if hasattr(Audio, 'duration') else False
+
+    def stream_end_handler():
+        while True:
+            if Audio().get_pos() == Audio().get_total():
+                Audio().media_ended()
+                break
+            else:
+                time.sleep(1)
 
     def _menu_voices(self, state:bool):
         try:
@@ -81,7 +228,7 @@ class Audio:
             for i in Audio_voices:
                 SysTrayIcon().EditMenuItemInfo(i[0], i)
         except ImportError:
-            pass
+            pass   
 
     async def _play_audio(self, filename, keep_alive: bool = True):
         from winrt.windows.media.playback import MediaPlaybackItem, MediaPlaybackState
@@ -89,13 +236,25 @@ class Audio:
         from winrt.windows.storage import StorageFile
         import asyncio
         await asyncio.create_task(self.async_initiallize())
-        file = await StorageFile.get_file_from_path_async(filename)
-        Audio.title = file.display_name
-        Audio.source = core.MediaSource.create_from_storage_file(file)
+        if isinstance(filename, str):
+            try:
+                file = await StorageFile.get_file_from_path_async(filename)
+            except RuntimeError:
+                print(filename, 'is not a valid file')
+                Audio.title = ''
+                return
+            Audio.title = file.display_name
+            Audio.source = core.MediaSource.create_from_storage_file(file)
+        elif isinstance(filename, core.MediaSource):
+            Audio.source = filename
+            Audio.title = ''
+        else:
+            raise Audio.FileTypeError('No file was specified!')
         item = MediaPlaybackItem(Audio.source)
-        self.mediaplayer.source = item
-        self.mediaplayer.add_media_ended(self.media_ended)
-        self.mediaplayer.play()
+        Audio.mediaplayer.source = item
+        Audio.mediaplayer.play()
+
+        del Audio._stream
 
         #update the display proprieties
         props = item.get_display_properties()
@@ -107,7 +266,7 @@ class Audio:
 
         if keep_alive:
             try:
-                session = self.mediaplayer.playback_session
+                session = Audio.mediaplayer.playback_session
                 while session.playback_state != MediaPlaybackState.NONE:
                     time.sleep(2)
                 return
@@ -119,12 +278,9 @@ class Audio:
     class StopMusic(BaseException):
         pass
 
-    def media_ended(self, *args):
-        Audio().quit()
-
-    def quit(self):
+    def quit():
         try:
-            self.mediaplayer.close()
+            Audio.mediaplayer.close()
             if os.environ.get('DEBUG'):
                 print('[DEBUG  ] [Media       ] Audio player destroyed')
         except AttributeError:
@@ -134,20 +290,20 @@ class Audio:
             except ImportError:
                 pass
 
-    def play(self):
-        self.mediaplayer.play()
+    def play():
+        Audio.mediaplayer.play()
         
-    def pause(self):
-        self.mediaplayer.pause()
+    def pause():
+        Audio.mediaplayer.pause()
 
-    def play_pause(self):
+    def play_pause():
         try:
             from winrt.windows.media.playback import MediaPlaybackState
             session = Audio.mediaplayer.playback_session.playback_state
             if session == MediaPlaybackState.PLAYING:
-                Audio().pause()
+                Audio.pause()
             elif session == MediaPlaybackState.PAUSED:
-                Audio().play()
+                Audio.play()
             else:
                 pass
         except RuntimeError:
@@ -167,7 +323,10 @@ class Audio:
             return True
 
     def get_pos(self):
-        return round(Audio.mediaplayer.playback_session.position.duration / 10000000)
+        try:
+            return round(Audio.mediaplayer.playback_session.position.duration / 10000000)
+        except RuntimeError:
+            return 0
     
     def set_pos(self, date):
         if isinstance(date, str):
@@ -175,11 +334,19 @@ class Audio:
         from winrt.windows.foundation import TimeSpan
         tm = TimeSpan()
         tm.duration = int(date) * 10000000
-        Audio.mediaplayer.playback_session.position = tm
+        try:
+            Audio.mediaplayer.playback_session.position = tm
+        except RuntimeError:
+            pass
         pass
 
     def get_total(self):
-        return round(Audio.source.duration.duration / 10000000)
+        if hasattr(Audio, 'duration'):
+            return round(Audio.duration.duration / 10000000)
+        elif hasattr(Audio, 'source') and hasattr(Audio.source.duration, 'duration'):
+            return round(Audio.source.duration.duration / 10000000)
+        else:
+            return 0
 
     def is_playing(self):
         try:
@@ -195,11 +362,46 @@ class Audio:
         Audio.mediaplayer.volume = volume
 
     def get_volume(self):
-        return Audio.mediaplayer.volume * 100
+        try:
+            return Audio.mediaplayer.volume * 100
+        except AttributeError:
+            return 0
+
+    def bind(self, **kwargs):
+        for i in list(kwargs.keys()):
+            if i in self.events:
+                exec('Audio.{} = kwargs[i]'.format(i))
+            else:
+                raise KeyError('"%s" is not an event! Events are: %s' % (i, self.events)) from None
 
     class NotSupportedFile(BaseException):
         pass
     
+    class FileTypeError(BaseException):
+        pass
+
+    # events
+
+    def media_ended(self, *args, **kwargs):
+        ''' default media_ended handler '''
+        Audio.quit()
+
+    def source_changed(self, *args, **kwargs):
+        ''' default source_changed handler '''
+        pass
+
+    def volume_changed(self, *args, **kwargs):
+        ''' default volume_changed handler '''
+        pass
+
+    def playback_state_changed(self, *args, **kwargs):
+        ''' default playback_state_changed handler '''
+        pass
+
+    def position_changed(self, *args, **kwargs):
+        ''' default position_changed handler '''
+        pass
+
     class Queue:
 
         def __init__(self, queue_definition: object, random: bool = True, repeat: int = 0, threadded: bool = False, daemon: bool = None, **t_kwargs) -> None:
@@ -229,7 +431,7 @@ class Audio:
                 the list of files name that must be:
                 - list
                 - file with .read() support
-                - .json file like {"queue":[somefiles]}
+                - .json file like formatted as {"queue":[somefiles]}
                 - Queue.Folder object
 
               random:
@@ -249,9 +451,7 @@ class Audio:
                 >>>         Audio.Queue.quit()  #<- do not pass self parameter
                 >>>         break  #<- interrupt the main loop
 
-                other options:
-                
-                !!! DON'T PASS ANY PARAMETER !!!
+              other options:
 
                 Audio.Queue.next()      play the next song on in the list
                 Audio.Queue.provious()  play the previous song in the list
@@ -352,13 +552,13 @@ class Audio:
             Audio.Queue._list.move_previous()
 
         def pause():
-            Audio().pause()
+            Audio.pause()
 
         def play():
-            Audio().play()
+            Audio.play()
 
         def quit():
-            Audio().quit()
+            Audio.quit()
             return
 
         class Folder:
