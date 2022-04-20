@@ -50,7 +50,6 @@ from kivymd.uix.progressbar import MDProgressBar
 from kivymd.uix.label import MDLabel
 from kivy.core.window import Window
 from kivy.uix.image import Image
-from kivy.uix.widget import Widget
 from kivymd.app import MDApp
 from kivy.clock import Clock
 from kivy.properties import BooleanProperty, StringProperty, ListProperty
@@ -76,7 +75,7 @@ except ImportError:
 
 from threading import Thread
 
-import time
+import time, logging
 try:
     from core.audio.Audio import Audio
     from core.audio.AudioHelpers import *
@@ -84,7 +83,8 @@ except ModuleNotFoundError:
     from Audio import Audio
     from AudioHelpers import *
 
-Audio().bind(source_changed = lambda *args: GUI.source_changed(),
+Audio().bind(media_ended = lambda *args: setattr(GUI.play_pause_button, 'icon', 'play'),
+             source_changed = lambda *args: GUI.source_changed(),
              position_changed = lambda *args: setattr(GUI.time_slider, 'value', Audio().get_pos()) \
                 if GUI.time_slider.value != sum(int(x) * 60 ** i for i, x in enumerate(reversed(GUI.total_time_label.text.split(':')))) and GUI.time_slider.pressed == False else None,
              playback_state_changed = lambda *args: setattr(GUI.play_pause_button, 'icon', 'play' if not Audio().is_playing() else 'pause'))
@@ -156,18 +156,19 @@ class GUI(MDBoxLayout):
         else:
             GUI.tree_view = None
 
-        GUI.title = MDLabel(text=Audio.title if hasattr(Audio, 'title') else '', halign='center', font_style='H6')
+        GUI.title = MDLabel(text=Audio.title if hasattr(Audio, 'title') else 'No suorce', halign='center', font_style='H6')
         GUI.title.pos_hint = {'center_x':.5, 'center_y':.35}
 
         GUI.loading = MDLabel(text='Loading...', halign='center')
         GUI.loading.pos_hint = {'center_x':.5, 'center_y':.30}
+        GUI.loading.opacity = 0
 
         mainFrame.add_widget(GUI.title)
         mainFrame.add_widget(GUI.loading)
 
         GUI.time_slider = Slider()
         GUI.time_slider.min = 0
-        GUI.time_slider.max = GUI.secs
+        GUI.time_slider.max = GUI.secs+1
         GUI.time_slider.hint = False
         GUI.time_slider.pos_hint = {'center_x':.5, 'center_y':.25}
         GUI.time_slider.pressed = False
@@ -183,10 +184,12 @@ class GUI(MDBoxLayout):
         class BakwordsButton(MDIconButton):
 
             def on_press(self):
-                return GUI.dispatch('on_backward_button_pressed')
+                #return GUI.dispatch('on_backward_button_pressed')
+                pass
 
             def on_release(self):
-                return GUI.dispatch('on_backward_button_released')
+                #return GUI.dispatch('on_backward_button_released')
+                pass
 
         GUI.backwords_button = BakwordsButton(icon='skip-backward')
         GUI.backwords_button.pos_hint = {'center_x':.43, 'center_y':.17}
@@ -201,10 +204,12 @@ class GUI(MDBoxLayout):
 
         class FastForwardButton(MDIconButton):
             def on_press(self):
-                return GUI.dispatch('on_forward_button_pressed')
-            
+                #return GUI.dispatch('on_forward_button_pressed')
+                pass
+
             def on_release(self):
-                return GUI.dispatch('on_forward_button_released')
+                #return GUI.dispatch('on_forward_button_released')
+                pass
 
         GUI.fast_forward_button = FastForwardButton(icon='skip-forward')
         GUI.fast_forward_button.pos_hint = {'center_x':.57, 'center_y':.17}
@@ -249,7 +254,6 @@ class GUI(MDBoxLayout):
         self.add_widget(mainbox)
 
         self.create_menu()
-        self.new_stream('https://www.youtube.com/watch?v=LZMDuDvP3r4')
 
         return self
 
@@ -326,11 +330,12 @@ class GUI(MDBoxLayout):
     def parse(self, text):
 
         if text != '':
-            GUI.time_slider.value = 0
             try:
                 Audio.pause()
-            except AttributeError:
+            except (RuntimeError, AttributeError):
                 asyncio.run(Audio().async_initiallize())
+
+            GUI.time_slider.value = 0
 
             url = text
             Audio.from_stream(Youtube(url).get_stream())
@@ -370,6 +375,13 @@ class GUI(MDBoxLayout):
                     f += '.m4a'
             
                 f = os.path.realpath(f)
+
+                try:
+                    from libs.LibWin import IconStatusIter
+                    GUI.ici = IconStatusIter()
+                    GUI.ici.init(MDApp.get_running_app().title, None)
+                except ImportError:
+                    logging.warning('Iconstatus not aviable')
                 if Audio().is_stream():
                     Thread(target=Audio().get_stream().download_audio, args=(f, True, GUI.dlcb), daemon=True).start()
             return
@@ -382,11 +394,16 @@ class GUI(MDBoxLayout):
                 pass
             GUI.downlod_progress.max = total
         elif total == round(recvd):
+            if hasattr(GUI, 'ici'):
+                GUI.ici.quit()
+                del GUI.ici
             try:
                 GUI.downlod_progress.hide = True
             except TypeError:
                 pass
         else:
+            if hasattr(GUI, 'ici'):
+                GUI.ici.setProgress(round(recvd), total)
             GUI.downlod_progress.value = round(recvd)
 
 
@@ -406,7 +423,10 @@ class GUI(MDBoxLayout):
         f = askopenfilename(filetypes=(('Music file', '.mp3'), ('Music file', '.m4a')), initialdir=MUSICDIR)
 
         if f:
-            Audio.pause()
+            try:
+                Audio.pause()
+            except (RuntimeError, AttributeError):
+                await asyncio.create_task(Audio().async_initiallize())
             if hasattr(Audio, 'duration'):
                 del Audio.duration
             file = await StorageFile.get_file_from_path_async(os.path.realpath(f))
@@ -417,20 +437,31 @@ class GUI(MDBoxLayout):
             Audio.play()
             time.sleep(.5)
             GUI.download_button.disabled = True
+            try:
+                MDApp.get_running_app().eleve()
+            except AttributeError:
+                import win32gui
+                win32gui.ShowWindow(win32gui.FindWindow(MDApp.get_running_app().title), 1)
 
 
     def slider_pressed(self, motion):
         if GUI.time_slider.pos[1] * -1 - 20 < motion.pos[1] < GUI.time_slider.pos[1] * -1 + 20:
             GUI.time_slider.pressed = True
         else:
-            GUI.time_slider.value = Audio().get_pos()
+            try:
+                GUI.time_slider.value = Audio().get_pos()
+            except AttributeError:
+                pass
 
     def slider_released(self, motion, value):
         if GUI.time_slider.pos[1] * -1 - 20 < motion.pos[1] < GUI.time_slider.pos[1] * -1 + 20 or GUI.time_slider.pressed == True:
             Audio().set_pos(value)
             GUI.time_slider.pressed = False
         else:
-            GUI.time_slider.value = Audio().get_pos()
+            try:
+                GUI.time_slider.value = Audio().get_pos()
+            except AttributeError:
+                pass
 
     def on_slider_move(slider):
         GUI.current_time_label.text = time.strftime("%M:%S", time.gmtime(slider.value))
@@ -457,10 +488,12 @@ class Music_Player_GUI(MDApp):
 
     def build(self):
         
+        self.title = 'Music Player'
         app = Screen(name='main')
         gui = GUI()
         gui.bind(on_forward_button_pressed=lambda *args: print('pressed'))
         app.add_widget(gui)
+        gui.new_stream('https://www.youtube.com/watch?v=LZMDuDvP3r4')
         self.sm = ScreenManager()
         self.sm.add_widget(app)
 
