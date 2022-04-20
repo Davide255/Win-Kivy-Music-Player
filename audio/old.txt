@@ -1,0 +1,286 @@
+def _play_audio(self, filename, stoppable: bool, namehint = ""):
+        # filename: Union[str, bytes, PathLike[str], PathLike[bytes], IO]
+        # namehint: Optional[str]
+
+        if environ['Audio_playing'] == '1':
+            Logger.warning('An audio from automator is already playing. End it to start a new one')
+            return
+        else:
+            environ['Audio_playing'] = '1'
+        if path.isfile(filename):
+            environ['AUDIO_PATH'] = filename
+        elif path.isfile(path.join('datab', 'data', filename)):
+            filename = path.join('datab', 'data', filename)
+            environ['AUDIO_PATH'] = filename
+        else:
+            raise FileNotFoundError(
+                'file {} not found'.format(filename)
+            )
+        try:
+            win32gui.SetWindowText(environ['Main_Window_hWnd'], '{} - Automator'.format(path.basename(filename)))
+        except (KeyError, ValueError, AttributeError, OSError) as e:
+            win32gui.SetWindowText(win32gui.FindWindow(None, 'Automator'), '{} - Automator'.format(path.basename(filename)))
+            Logger.debug('Exception: Ignored {}'.format(e))
+        mixer.music.load(filename, namehint)
+        Logger.debug('Audio: loaded "{}" in the mixer succesfully'.format(filename))
+        mixer.music.set_volume(0.4)
+        mixer.music.play()
+        Logger.debug('Audio: Audio started correctly')
+        running = True        
+        try:
+            if stoppable:
+                prev_state = win32api.GetKeyState(VK_MEDIA_PLAY_PAUSE)
+                Logger.debug('System: win32api response correctly')
+                state = prev_state
+                while running:
+                    if mixer.music.get_pos() < 0:
+                        running = False
+                    else:
+                        state = win32api.GetKeyState(VK_MEDIA_PLAY_PAUSE)    
+                        if (state <= -128 or state <= -127):
+                            if not mixer.music.get_busy():
+                                Logger.debug('Audio: track resumed from {} key at {}'.format(VK_MEDIA_PLAY_PAUSE, mixer.music.get_pos()))
+                                mixer.music.unpause()
+                                prev_state = state
+                                try:
+                                    win32gui.SetWindowText(environ['Main_Window_hWnd'], '{} - Automator'.format(path.basename(filename)))
+                                except (KeyError, ValueError, AttributeError, OSError) as e:
+                                    print(e)
+                            else:
+                                Logger.debug('Audio: track paused from key "{}" at {}'.format(VK_MEDIA_PLAY_PAUSE, mixer.music.get_pos()))
+                                mixer.music.pause()
+                                prev_state = state
+                                try:
+                                    win32gui.SetWindowText(environ['Main_Window_hWnd'], 'Automator')
+                                except (KeyError, ValueError, AttributeError, OSError) as e:
+                                    print(e)
+                            time.sleep(1)
+                else:
+                    while running:
+                        if mixer.music.get_pos() < 0:
+                            running = False
+                Logger.info('Audio: Audio finished')
+                mixer.music.unload()
+                environ['Audio_playing'] = '0'
+                Logger.debug('Audio: Mixer unloaded correctly')
+                self._menu_voices(False)
+        except KeyboardInterrupt:
+            mixer.music.fadeout()
+            mixer.music.unload()
+            environ['Audio_playing'] = '0'
+            Logger.debug('Audio: Mixer unloaded correctly')
+        except error as e:
+            environ['Audio_playing'] = '0'
+            Logger.debug(e)
+
+def quit_audio(self, *args, **kwargs):
+        self.mediaplayer.close()
+        self._menu_voices(False)
+        try:
+            mixer.music.stop()
+            mixer.music.unload()
+            mixer.quit()
+            Logger.debug('Audio: Mixer unloaded correctly')
+        except error as e:
+            Logger.debug(e)
+            if kwargs.get('idi_message') != None:
+                return
+            else:
+                import win32con
+                import win32gui
+                win32gui.MessageBeep(win32con.MB_ICONWARNING)
+                try:
+                    environ['DEBUG']
+                    win32gui.MessageBox(None, "No Audio is playing from Automator!\n(Error: {})".format(e), "No Audio", win32con.MB_OK | win32con.MB_ICONWARNING)
+                except KeyError:
+                    win32gui.MessageBox(None, "No Audio is playing from Automator!", "No Audio", win32con.MB_OK | win32con.MB_ICONWARNING)
+
+    def stop_play_audio(self, *args):
+        try:
+            if mixer.music.get_busy():
+                mixer.music.pause()
+            else:
+                mixer.music.unpause()
+        except error as e:
+            Logger.debug(e)
+            import win32con
+            import win32gui
+            win32gui.MessageBeep(win32con.MB_ICONWARNING)
+            try:
+                environ['DEBUG']
+                win32gui.MessageBox(None, "No Audio is playing from Automator!\n(Error: {})".format(e), "No Audio", win32con.MB_OK | win32con.MB_ICONWARNING)
+            except KeyError:
+                win32gui.MessageBox(None, "No Audio is playing from Automator!", "No Audio", win32con.MB_OK | win32con.MB_ICONWARNING)
+
+def play_queue(self, queue_definition: object, random: bool = True, repeat: int = 0):
+            try:
+                if environ['queue_playing'] == '1':
+                    Logger.warning('A queue from automator is already playing. End it to start a new one')
+                    return
+                else:
+                    environ['queue_playing'] = '1'
+            except KeyError:
+                environ['queue_playing'] = '1'
+            import os
+            from random import choice
+
+            import win32con            
+            try:
+                queue = queue_definition.read()
+                queue = queue.split('\n')
+            except (IOError, OSError, AttributeError):
+                if isinstance(queue_definition, str):
+                    try:
+                        suffix = os.path.basename(queue_definition).split('.')[1]
+                        if not os.path.isfile(queue_definition):
+                            raise FileNotFoundError('file {} not found!'.format(queue_definition))
+                    except IndexError:
+                        raise Audio.NotSupportedFile('extension is not supported')
+
+                    if suffix == 'json':
+                        from json import load
+                        js = load(open(queue_definition, 'r'))
+                        queue = js['queue']
+                    elif suffix == 'txt':
+                        file = open(queue_definition, 'r')
+                        queue = file.read().split('\n')
+                        file.close()
+                elif isinstance(queue_definition, list):
+                    queue = queue_definition
+                elif isinstance(queue_definition, self.Folder):
+                    queue = [os.path.join(self.Folder.folder, f) for f in os.listdir(self.Folder.folder) if os.path.isfile(os.path.join(self.Folder.folder, f))]
+
+            history_len = len(queue)
+            if not random:
+                history = queue.copy()
+            else:
+                history = []
+                for i in range(history_len):
+                    f = choice(queue)
+                    queue.remove(f)
+                    history.append(f)
+            current = 0 #start from the first file
+            while True:
+                filename = history[current]
+                if path.isfile(filename):
+                    environ['CURRENT_AUDIO_PATH'] = filename
+                elif path.isfile(path.join('datab', 'data', filename)):
+                    filename = path.join('datab', 'data', os.path.basename(filename))
+                    environ['CURRENT_AUDIO_PATH'] = filename
+                else:
+                    raise FileNotFoundError(
+                        'file {} not found'.format(filename)
+                    )
+                try:
+                    mixer.music.load(environ['CURRENT_AUDIO_PATH'])
+                    Logger.debug('Audio: loaded "{}" in the mixer succesfully'.format(filename))
+                    mixer.music.set_volume(0.4)
+                    mixer.music.play()
+                    Logger.debug('Audio: Audio started correctly')
+                    running = True        
+                    prev_state = win32api.GetKeyState(VK_MEDIA_PLAY_PAUSE)
+                    prev_next_track_state = win32api.GetKeyState(win32con.VK_MEDIA_NEXT_TRACK)
+                    prev_prev_track_state = win32api.GetKeyState(win32con.VK_MEDIA_PREV_TRACK)
+                    Logger.debug('System: win32api response correctly')
+                    state = prev_state
+                    prev_track_state = prev_prev_track_state
+                    next_track_state = prev_next_track_state
+                    try:
+                        win32gui.SetWindowText(environ['Main_Window_hWnd'], '{} - Automator'.format(path.basename(filename)))
+                    except (KeyError, ValueError, AttributeError, OSError) as e:
+                        pass
+                    while running:
+                        try:
+                            if environ['Stop_Queue'] == '1':
+                                environ['Stop_Queue'] = '0'
+                                raise Audio.Queue.StopQueue()
+                        except KeyError:
+                            pass
+                        '''if (win32gui.GetWindowText(environ['Main_Window_hWnd']) == 'Automator' and not mixer.music.get_busy()):
+                            win32gui.SetWindowText(environ['Main_Window_hWnd'], '{} - Automator'.format(path.basename(filename)))'''
+                        if mixer.music.get_pos() < 0:
+                            running = False
+                            current += 1
+                        else:
+                            state = win32api.GetKeyState(VK_MEDIA_PLAY_PAUSE)    
+                            if (state <= -128 or state <= -127):
+                                if not mixer.music.get_busy():
+                                    Logger.debug('Audio: track resumed at {}s'.format(mixer.music.get_pos() / 1000))
+                                    mixer.music.unpause()
+                                    try:
+                                        win32gui.SetWindowText(environ['Main_Window_hWnd'], '{} - Automator'.format(path.basename(filename)))
+                                    except (KeyError, ValueError, AttributeError, OSError) as e:
+                                        pass
+                                else:
+                                    Logger.debug('Audio: track paused at {}s'.format(mixer.music.get_pos() / 1000))
+                                    mixer.music.pause()
+                                    try:
+                                        win32gui.SetWindowText(environ['Main_Window_hWnd'], 'Automator')
+                                    except (KeyError, ValueError, AttributeError, OSError) as e:
+                                        pass
+                                prev_state = state
+                                time.sleep(0.9)
+                            next_track_state = win32api.GetKeyState(win32con.VK_MEDIA_NEXT_TRACK)
+                            if (next_track_state <= -128 or next_track_state <= -127):
+                                if not current == history_len:
+                                    current += 1
+                                    running = False
+                                    Logger.debug('Audio: Next track button pressed')
+                                else:
+                                    if repeat != 0:
+                                        current = 0
+                                        repeat -= 1
+                                        running = False
+                                    else:
+                                        Logger.info('Audio: Queue ended.')
+                                        raise self.StopQueue()
+                                prev_next_track_state = next_track_state
+                                time.sleep(0.9)
+                            prev_track_state = win32api.GetKeyState(win32con.VK_MEDIA_PREV_TRACK)
+                            if (prev_track_state <= -128 or prev_track_state <= -127):
+                                if mixer.music.get_pos() > 5000:
+                                    mixer.music.set_pos(0)
+                                else:
+                                    if not current == history_len:
+                                        current -= 1
+                                        running = False
+                                    else:
+                                        if repeat != 0:
+                                            current = history_len
+                                            repeat -= 1
+                                            running = False
+                                        else:
+                                            Logger.info('Audio: Queue ended.')
+                                            raise self.StopQueue()
+                                prev_prev_track_state = prev_track_state
+                                time.sleep(0.9)
+                                
+                except KeyboardInterrupt:
+                    mixer.music.fadeout(3)
+                    mixer.music.unload()
+                    environ['queue_playing'] = '0'
+                    Logger.debug('Audio: Mixer unloaded correctly')
+                    return
+                except error as e:
+                    environ['queue_playing'] = '0'
+                    Logger.debug(e)
+                    return
+                except Audio.Queue.StopQueue:
+                    mixer.music.fadeout(3)
+                    mixer.music.unload()
+                    environ['queue_playing'] = '0'
+                    Logger.debug('Audio: Mixer unloaded correctly')
+                    Logger.info('Audio: Queue quitted')
+                    self._menu_voices(False)
+                    return
+            Logger.info('Audio: Audio finished')
+            mixer.music.unload()
+            environ['queue_playing'] = '0'
+            Logger.debug('Audio: Mixer unloaded correctly')
+
+        
+        class StopQueue(BaseException):
+            try:
+                win32gui.SetWindowText(environ['Main_Window_hWnd'], 'Automator')
+            except (KeyError, ValueError, AttributeError, OSError) as e:
+                pass

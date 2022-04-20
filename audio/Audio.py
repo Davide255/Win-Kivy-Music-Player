@@ -174,6 +174,7 @@ Simples:
             CoUninitialize()
 
     async def async_initiallize(self):
+        
         from winrt.windows.media.playback import MediaPlayer
         if hasattr(Audio, 'mediaplayer'):
             del Audio.mediaplayer
@@ -359,7 +360,10 @@ Simples:
     def set_volume(self, volume):
         if volume > 1:
             volume /= 100
-        Audio.mediaplayer.volume = volume
+        try:
+            Audio.mediaplayer.volume = volume
+        except AttributeError:
+            pass
 
     def get_volume(self):
         try:
